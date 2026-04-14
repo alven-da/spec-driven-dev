@@ -8,6 +8,8 @@ import (
 	"auth-service/core"
 	"auth-service/ports"
 
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -29,6 +31,10 @@ func (r *UsersRepo) Create(ctx context.Context, email, passwordHash, verificatio
 		verificationToken,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return core.ErrUserAlreadyExists
+		}
 		return err
 	}
 

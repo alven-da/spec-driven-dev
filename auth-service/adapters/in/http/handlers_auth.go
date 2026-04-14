@@ -10,11 +10,15 @@ import (
 )
 
 type AuthHandlers struct {
-	usecases *core.AuthUsecases
+	usecases     *core.AuthUsecases
+	cookieSecure bool
 }
 
-func NewAuthHandlers(usecases *core.AuthUsecases) *AuthHandlers {
-	return &AuthHandlers{usecases: usecases}
+func NewAuthHandlers(usecases *core.AuthUsecases, cookieSecure bool) *AuthHandlers {
+	return &AuthHandlers{
+		usecases:     usecases,
+		cookieSecure: cookieSecure,
+	}
 }
 
 func (h *AuthHandlers) Signup(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +113,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    strconv.FormatInt(session.UserID, 10),
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 	w.WriteHeader(http.StatusOK)

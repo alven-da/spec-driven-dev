@@ -42,7 +42,9 @@ func (u *AuthUsecases) Signup(ctx context.Context, email, password string) error
 		return err
 	}
 
-	return u.mailer.SendVerificationEmail(ctx, email, verificationToken)
+	// In MVP, signup persistence is the source of truth; mail dispatch is best-effort.
+	_ = u.mailer.SendVerificationEmail(ctx, email, verificationToken)
+	return nil
 }
 
 func (u *AuthUsecases) VerifyEmail(ctx context.Context, token string) error {
