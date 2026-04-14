@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     client_id TEXT NOT NULL,
     redirect_uri TEXT NOT NULL,
     scope TEXT NOT NULL DEFAULT '',
+    nonce TEXT NOT NULL DEFAULT '',
+    auth_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     code_challenge TEXT NOT NULL,
     code_challenge_method TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,

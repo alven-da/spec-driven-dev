@@ -72,12 +72,16 @@ func (h *OAuthHandlers) Authorize(w http.ResponseWriter, r *http.Request) {
 		ClientID:            query.Get("client_id"),
 		RedirectURI:         query.Get("redirect_uri"),
 		Scope:               query.Get("scope"),
+		Nonce:               query.Get("nonce"),
 		CodeChallenge:       query.Get("code_challenge"),
 		CodeChallengeMethod: query.Get("code_challenge_method"),
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, core.ErrInvalidOAuthRequest) {
+			status = http.StatusBadRequest
+		}
+		if errors.Is(err, core.ErrUnauthorized) {
 			status = http.StatusBadRequest
 		}
 		w.WriteHeader(status)
@@ -104,11 +108,11 @@ func (h *OAuthHandlers) Token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
 	if r.Form.Get("grant_type") != "authorization_code" {
-		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_grant_type"})
 		return
 	}
 
@@ -124,6 +128,10 @@ func (h *OAuthHandlers) Token(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, core.ErrInvalidOAuthRequest) {
 			status = http.StatusBadRequest
 			payload = map[string]string{"error": "invalid_request"}
+		}
+		if errors.Is(err, core.ErrUnauthorized) {
+			status = http.StatusBadRequest
+			payload = map[string]string{"error": "invalid_client"}
 		}
 		if errors.Is(err, core.ErrInvalidGrant) {
 			status = http.StatusBadRequest

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"auth-service/ports"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -24,6 +25,8 @@ type AuthorizationCodeRecord struct {
 	ClientID            string
 	RedirectURI         string
 	Scope               string
+	Nonce               string
+	AuthTime            time.Time
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
@@ -36,9 +39,18 @@ type AuthorizationCodeStore interface {
 
 type TokenSigner interface {
 	SignToken(subject, audience string, ttl time.Duration, additionalClaims map[string]any) (string, error)
-	ParseAndValidate(token string) (map[string]any, error)
+	ParseAndValidate(token, expectedAudience, expectedTokenUse string) (map[string]any, error)
 	JWKS() map[string]any
 	Issuer() string
+}
+
+type OAuthUsersReader interface {
+	FindByID(ctx context.Context, userID int64) (ports.StoredUser, error)
+}
+
+type OAuthClientConfig struct {
+	ClientID            string
+	AllowedRedirectURIs map[string]struct{}
 }
 
 type CreateAuthorizationCodeInput struct {
@@ -46,6 +58,7 @@ type CreateAuthorizationCodeInput struct {
 	ClientID            string
 	RedirectURI         string
 	Scope               string
+	Nonce               string
 	CodeChallenge       string
 	CodeChallengeMethod string
 }
@@ -66,21 +79,31 @@ type TokenSet struct {
 }
 
 type OAuthUsecases struct {
-	codeStore AuthorizationCodeStore
-	signer    TokenSigner
-	now       func() time.Time
+	codeStore  AuthorizationCodeStore
+	users      OAuthUsersReader
+	signer     TokenSigner
+	clientConf OAuthClientConfig
+	now        func() time.Time
 }
 
-func NewOAuthUsecases(codeStore AuthorizationCodeStore, signer TokenSigner) *OAuthUsecases {
+func NewOAuthUsecases(codeStore AuthorizationCodeStore, users OAuthUsersReader, signer TokenSigner, clientConf OAuthClientConfig) *OAuthUsecases {
 	return &OAuthUsecases{
-		codeStore: codeStore,
-		signer:    signer,
-		now:       time.Now,
+		codeStore:  codeStore,
+		users:      users,
+		signer:     signer,
+		clientConf: clientConf,
+		now:        time.Now,
 	}
 }
 
 func (u *OAuthUsecases) CreateAuthorizationCode(ctx context.Context, input CreateAuthorizationCodeInput) (string, error) {
 	if input.UserID <= 0 || strings.TrimSpace(input.ClientID) == "" || strings.TrimSpace(input.RedirectURI) == "" {
+		return "", ErrInvalidOAuthRequest
+	}
+	if input.ClientID != u.clientConf.ClientID {
+		return "", ErrUnauthorized
+	}
+	if _, ok := u.clientConf.AllowedRedirectURIs[input.RedirectURI]; !ok {
 		return "", ErrInvalidOAuthRequest
 	}
 	if strings.TrimSpace(input.CodeChallenge) == "" || strings.TrimSpace(input.CodeChallengeMethod) != "S256" {
@@ -98,6 +121,8 @@ func (u *OAuthUsecases) CreateAuthorizationCode(ctx context.Context, input Creat
 		ClientID:            input.ClientID,
 		RedirectURI:         input.RedirectURI,
 		Scope:               strings.TrimSpace(input.Scope),
+		Nonce:               strings.TrimSpace(input.Nonce),
+		AuthTime:            u.now().UTC(),
 		CodeChallenge:       input.CodeChallenge,
 		CodeChallengeMethod: input.CodeChallengeMethod,
 		ExpiresAt:           u.now().Add(5 * time.Minute),
@@ -111,6 +136,12 @@ func (u *OAuthUsecases) CreateAuthorizationCode(ctx context.Context, input Creat
 
 func (u *OAuthUsecases) ExchangeCode(ctx context.Context, input ExchangeAuthorizationCodeInput) (TokenSet, error) {
 	if strings.TrimSpace(input.Code) == "" || strings.TrimSpace(input.ClientID) == "" || strings.TrimSpace(input.RedirectURI) == "" || strings.TrimSpace(input.CodeVerifier) == "" {
+		return TokenSet{}, ErrInvalidOAuthRequest
+	}
+	if input.ClientID != u.clientConf.ClientID {
+		return TokenSet{}, ErrUnauthorized
+	}
+	if _, ok := u.clientConf.AllowedRedirectURIs[input.RedirectURI]; !ok {
 		return TokenSet{}, ErrInvalidOAuthRequest
 	}
 
@@ -130,16 +161,30 @@ func (u *OAuthUsecases) ExchangeCode(ctx context.Context, input ExchangeAuthoriz
 		return TokenSet{}, ErrInvalidGrant
 	}
 
+	userIdentity, err := u.users.FindByID(ctx, record.UserID)
+	if err != nil {
+		return TokenSet{}, ErrInvalidGrant
+	}
+
 	subject := formatUserSubject(record.UserID)
 	accessToken, err := u.signer.SignToken(subject, record.ClientID, time.Hour, map[string]any{
-		"scope": record.Scope,
+		"scope":     record.Scope,
+		"token_use": "access",
 	})
 	if err != nil {
 		return TokenSet{}, err
 	}
-	idToken, err := u.signer.SignToken(subject, record.ClientID, time.Hour, map[string]any{
-		"scope": record.Scope,
-	})
+	idClaims := map[string]any{
+		"scope":          record.Scope,
+		"token_use":      "id",
+		"auth_time":      record.AuthTime.Unix(),
+		"email":          userIdentity.Email,
+		"email_verified": userIdentity.EmailVerified,
+	}
+	if record.Nonce != "" {
+		idClaims["nonce"] = record.Nonce
+	}
+	idToken, err := u.signer.SignToken(subject, record.ClientID, time.Hour, idClaims)
 	if err != nil {
 		return TokenSet{}, err
 	}
@@ -163,7 +208,7 @@ func (u *OAuthUsecases) UserInfo(ctx context.Context, accessToken string) (map[s
 		return nil, ErrUnauthorized
 	}
 
-	claims, err := u.signer.ParseAndValidate(accessToken)
+	claims, err := u.signer.ParseAndValidate(accessToken, u.clientConf.ClientID, "access")
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
@@ -181,6 +226,10 @@ func (u *OAuthUsecases) JWKS() map[string]any {
 
 func (u *OAuthUsecases) Issuer() string {
 	return u.signer.Issuer()
+}
+
+func (u *OAuthUsecases) ConfiguredClientID() string {
+	return u.clientConf.ClientID
 }
 
 func formatUserSubject(userID int64) string {

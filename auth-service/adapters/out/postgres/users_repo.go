@@ -80,6 +80,22 @@ func (r *UsersRepo) MarkEmailVerified(ctx context.Context, token string) error {
 	return nil
 }
 
+func (r *UsersRepo) FindByID(ctx context.Context, userID int64) (ports.StoredUser, error) {
+	var user ports.StoredUser
+	err := r.db.QueryRowContext(
+		ctx,
+		`SELECT id, email, password_hash, email_verified
+		 FROM users
+		 WHERE id = $1`,
+		userID,
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.EmailVerified)
+	if err != nil {
+		return ports.StoredUser{}, err
+	}
+
+	return user, nil
+}
+
 func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {

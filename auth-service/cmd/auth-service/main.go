@@ -34,7 +34,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	oauthUsecases := core.NewOAuthUsecases(oauthRepo, signer)
+	oauthUsecases := core.NewOAuthUsecases(oauthRepo, usersRepo, signer, core.OAuthClientConfig{
+		ClientID: "web-client",
+		AllowedRedirectURIs: map[string]struct{}{
+			"https://app.example.com/callback": {},
+		},
+	})
 	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases)
 
 	router := httpadapter.NewRouter(authHandlers, oauthHandlers)

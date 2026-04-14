@@ -236,7 +236,12 @@ func newTestAuthRouter(useFailingMailer bool, secureCookie bool) (http.Handler, 
 	if err != nil {
 		panic(err)
 	}
-	oauthUsecases := core.NewOAuthUsecases(oauthRepo, signer)
+	oauthUsecases := core.NewOAuthUsecases(oauthRepo, repo, signer, core.OAuthClientConfig{
+		ClientID: testOAuthClientID,
+		AllowedRedirectURIs: map[string]struct{}{
+			testOAuthRedirectURI: {},
+		},
+	})
 	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases)
 	router := httpadapter.NewRouter(handlers, oauthHandlers)
 
@@ -297,6 +302,16 @@ func (r *inMemoryUsersRepo) MarkEmailVerified(ctx context.Context, token string)
 	r.usersByEmail[email] = user
 	delete(r.tokenToEmail, token)
 	return nil
+}
+
+func (r *inMemoryUsersRepo) FindByID(ctx context.Context, userID int64) (ports.StoredUser, error) {
+	_ = ctx
+	for _, user := range r.usersByEmail {
+		if user.ID == userID {
+			return user, nil
+		}
+	}
+	return ports.StoredUser{}, core.ErrInvalidCredentials
 }
 
 type inMemoryOAuthRepo struct {

@@ -20,13 +20,15 @@ func (r *OAuthRepo) SaveAuthorizationCode(ctx context.Context, record core.Autho
 	_, err := r.db.ExecContext(
 		ctx,
 		`INSERT INTO oauth_authorization_codes
-		 (code, user_id, client_id, redirect_uri, scope, code_challenge, code_challenge_method, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		 (code, user_id, client_id, redirect_uri, scope, nonce, auth_time, code_challenge, code_challenge_method, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		record.Code,
 		record.UserID,
 		record.ClientID,
 		record.RedirectURI,
 		record.Scope,
+		record.Nonce,
+		record.AuthTime,
 		record.CodeChallenge,
 		record.CodeChallengeMethod,
 		record.ExpiresAt,
@@ -46,7 +48,7 @@ func (r *OAuthRepo) ConsumeAuthorizationCode(ctx context.Context, code string) (
 	var record core.AuthorizationCodeRecord
 	err = tx.QueryRowContext(
 		ctx,
-		`SELECT code, user_id, client_id, redirect_uri, scope, code_challenge, code_challenge_method, expires_at
+		`SELECT code, user_id, client_id, redirect_uri, scope, nonce, auth_time, code_challenge, code_challenge_method, expires_at
 		 FROM oauth_authorization_codes
 		 WHERE code = $1
 		 FOR UPDATE`,
@@ -57,6 +59,8 @@ func (r *OAuthRepo) ConsumeAuthorizationCode(ctx context.Context, code string) (
 		&record.ClientID,
 		&record.RedirectURI,
 		&record.Scope,
+		&record.Nonce,
+		&record.AuthTime,
 		&record.CodeChallenge,
 		&record.CodeChallengeMethod,
 		&record.ExpiresAt,

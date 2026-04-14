@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
@@ -54,7 +55,7 @@ func (s *Signer) SignToken(subject, audience string, ttl time.Duration, addition
 	return token.SignedString(s.privateKey)
 }
 
-func (s *Signer) ParseAndValidate(token string) (map[string]any, error) {
+func (s *Signer) ParseAndValidate(token, expectedAudience, expectedTokenUse string) (map[string]any, error) {
 	parsed, err := jwtlib.Parse(token, func(t *jwtlib.Token) (any, error) {
 		if t.Method.Alg() != jwtlib.SigningMethodRS256.Alg() {
 			return nil, errors.New("unexpected jwt alg")
@@ -69,8 +70,34 @@ func (s *Signer) ParseAndValidate(token string) (map[string]any, error) {
 	if !ok {
 		return nil, errors.New("invalid token claims")
 	}
+	if expectedAudience != "" {
+		if !audienceContains(mapClaims["aud"], expectedAudience) {
+			return nil, errors.New("invalid token audience")
+		}
+	}
+	if expectedTokenUse != "" {
+		tokenUse, _ := mapClaims["token_use"].(string)
+		if tokenUse != expectedTokenUse {
+			return nil, fmt.Errorf("invalid token use: %q", tokenUse)
+		}
+	}
 
 	return mapClaims, nil
+}
+
+func audienceContains(rawAudience any, expected string) bool {
+	switch aud := rawAudience.(type) {
+	case string:
+		return aud == expected
+	case []any:
+		for _, value := range aud {
+			asString, ok := value.(string)
+			if ok && asString == expected {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Signer) JWKS() map[string]any {

@@ -12,5 +12,6 @@ type StoredUser struct {
 type UsersRepository interface {
 	Create(ctx context.Context, email, passwordHash, verificationToken string) error
 	FindByEmail(ctx context.Context, email string) (StoredUser, error)
+	FindByID(ctx context.Context, userID int64) (StoredUser, error)
 	MarkEmailVerified(ctx context.Context, token string) error
 }
