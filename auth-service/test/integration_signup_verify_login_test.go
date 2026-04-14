@@ -10,8 +10,10 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	httpadapter "auth-service/adapters/in/http"
+	jwtadapter "auth-service/adapters/out/jwt"
 	maileradapter "auth-service/adapters/out/mailer"
 	"auth-service/core"
 	"auth-service/ports"
@@ -217,6 +219,7 @@ func (m *errMailer) SendVerificationEmail(ctx context.Context, email, token stri
 
 func newTestAuthRouter(useFailingMailer bool, secureCookie bool) (http.Handler, *bytes.Buffer) {
 	repo := newInMemoryUsersRepo()
+	oauthRepo := newInMemoryOAuthRepo()
 
 	var mailerOutput bytes.Buffer
 	logger := log.New(&mailerOutput, "", 0)
@@ -228,7 +231,14 @@ func newTestAuthRouter(useFailingMailer bool, secureCookie bool) (http.Handler, 
 
 	usecases := core.NewAuthUsecases(repo, mailer)
 	handlers := httpadapter.NewAuthHandlers(usecases, secureCookie)
-	router := httpadapter.NewRouter(handlers)
+
+	signer, err := jwtadapter.NewSigner("http://issuer.test")
+	if err != nil {
+		panic(err)
+	}
+	oauthUsecases := core.NewOAuthUsecases(oauthRepo, signer)
+	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases)
+	router := httpadapter.NewRouter(handlers, oauthHandlers)
 
 	return router, &mailerOutput
 }
@@ -287,4 +297,35 @@ func (r *inMemoryUsersRepo) MarkEmailVerified(ctx context.Context, token string)
 	r.usersByEmail[email] = user
 	delete(r.tokenToEmail, token)
 	return nil
+}
+
+type inMemoryOAuthRepo struct {
+	records map[string]core.AuthorizationCodeRecord
+}
+
+func newInMemoryOAuthRepo() *inMemoryOAuthRepo {
+	return &inMemoryOAuthRepo{
+		records: map[string]core.AuthorizationCodeRecord{},
+	}
+}
+
+func (r *inMemoryOAuthRepo) SaveAuthorizationCode(ctx context.Context, record core.AuthorizationCodeRecord) error {
+	_ = ctx
+	r.records[record.Code] = record
+	return nil
+}
+
+func (r *inMemoryOAuthRepo) ConsumeAuthorizationCode(ctx context.Context, code string) (core.AuthorizationCodeRecord, error) {
+	_ = ctx
+	record, ok := r.records[code]
+	if !ok {
+		return core.AuthorizationCodeRecord{}, core.ErrInvalidGrant
+	}
+
+	if time.Now().After(record.ExpiresAt) {
+		return core.AuthorizationCodeRecord{}, core.ErrInvalidGrant
+	}
+
+	delete(r.records, code)
+	return record, nil
 }
