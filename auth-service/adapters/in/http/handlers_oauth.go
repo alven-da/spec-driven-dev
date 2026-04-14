@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"auth-service/core"
@@ -13,10 +12,11 @@ import (
 
 type OAuthHandlers struct {
 	usecases *core.OAuthUsecases
+	cookies  *SessionCookieCodec
 }
 
-func NewOAuthHandlers(usecases *core.OAuthUsecases) *OAuthHandlers {
-	return &OAuthHandlers{usecases: usecases}
+func NewOAuthHandlers(usecases *core.OAuthUsecases, cookies *SessionCookieCodec) *OAuthHandlers {
+	return &OAuthHandlers{usecases: usecases, cookies: cookies}
 }
 
 func (h *OAuthHandlers) Discovery(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func (h *OAuthHandlers) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := sessionUserID(r)
+	userID, err := h.sessionUserID(r)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -164,13 +164,13 @@ func (h *OAuthHandlers) UserInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func sessionUserID(r *http.Request) (int64, error) {
+func (h *OAuthHandlers) sessionUserID(r *http.Request) (int64, error) {
 	cookie, err := r.Cookie("auth_session")
 	if err != nil {
 		return 0, err
 	}
 
-	return strconv.ParseInt(cookie.Value, 10, 64)
+	return h.cookies.DecodeUserID(cookie.Value)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

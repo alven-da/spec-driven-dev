@@ -230,7 +230,8 @@ func newTestAuthRouter(useFailingMailer bool, secureCookie bool) (http.Handler, 
 	}
 
 	usecases := core.NewAuthUsecases(repo, mailer)
-	handlers := httpadapter.NewAuthHandlers(usecases, secureCookie)
+	cookieCodec := httpadapter.NewSessionCookieCodec("test-session-secret")
+	handlers := httpadapter.NewAuthHandlers(usecases, secureCookie, cookieCodec)
 
 	signer, err := jwtadapter.NewSigner("http://issuer.test")
 	if err != nil {
@@ -242,7 +243,7 @@ func newTestAuthRouter(useFailingMailer bool, secureCookie bool) (http.Handler, 
 			testOAuthRedirectURI: {},
 		},
 	})
-	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases)
+	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases, cookieCodec)
 	router := httpadapter.NewRouter(handlers, oauthHandlers)
 
 	return router, &mailerOutput

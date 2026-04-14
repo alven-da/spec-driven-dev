@@ -15,6 +15,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if cfg.SessionSecret == "" {
+		log.Fatal("AUTH_SERVICE_SESSION_SECRET is required outside local/dev/test")
+	}
 
 	db, err := postgresadapter.OpenDB(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -28,7 +31,8 @@ func main() {
 	oauthRepo := postgresadapter.NewOAuthRepo(db)
 	mailer := maileradapter.NewLoggerMailer(log.Default())
 	authUsecases := core.NewAuthUsecases(usersRepo, mailer)
-	authHandlers := httpadapter.NewAuthHandlers(authUsecases, cfg.CookieSecure)
+	cookieCodec := httpadapter.NewSessionCookieCodec(cfg.SessionSecret)
+	authHandlers := httpadapter.NewAuthHandlers(authUsecases, cfg.CookieSecure, cookieCodec)
 
 	signer, err := jwtadapter.NewSigner("http://localhost" + cfg.Addr)
 	if err != nil {
@@ -40,7 +44,7 @@ func main() {
 			"https://app.example.com/callback": {},
 		},
 	})
-	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases)
+	oauthHandlers := httpadapter.NewOAuthHandlers(oauthUsecases, cookieCodec)
 
 	router := httpadapter.NewRouter(authHandlers, oauthHandlers)
 

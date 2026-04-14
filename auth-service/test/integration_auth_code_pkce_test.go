@@ -43,7 +43,7 @@ func TestAuthCodePKCEFlow(t *testing.T) {
 		t.Fatal("expected auth_session cookie")
 	}
 
-	verifier := "mvp-pkce-verifier-1234567890"
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
 	challenge := pkceChallengeS256(t, verifier)
 
 	authorizeReq := httptest.NewRequest(
@@ -146,7 +146,7 @@ func TestAuthCodePKCEFlow(t *testing.T) {
 
 func TestAuthorizeRejectsInvalidClientAndRedirect(t *testing.T) {
 	router, _, cookie := setupVerifiedSession(t)
-	verifier := "mvp-pkce-verifier-1234567890"
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
 	challenge := pkceChallengeS256(t, verifier)
 
 	invalidClientReq := httptest.NewRequest(
@@ -174,9 +174,31 @@ func TestAuthorizeRejectsInvalidClientAndRedirect(t *testing.T) {
 	}
 }
 
+func TestAuthorizeRejectsTamperedSessionCookie(t *testing.T) {
+	router, _, cookie := setupVerifiedSession(t)
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+	challenge := pkceChallengeS256(t, verifier)
+
+	tampered := *cookie
+	tampered.Value = "9999"
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/authorize?response_type=code&client_id="+testOAuthClientID+"&redirect_uri="+url.QueryEscape(testOAuthRedirectURI)+"&scope=openid&code_challenge_method=S256&code_challenge="+url.QueryEscape(challenge),
+		nil,
+	)
+	req.AddCookie(&tampered)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected tampered cookie authorize status %d, got %d", http.StatusUnauthorized, resp.Code)
+	}
+}
+
 func TestTokenRejectsUnsupportedGrantTypeAndInvalidClientOrRedirect(t *testing.T) {
 	router, authCode, _ := authorizeCodeForVerifiedUser(t, "")
-	verifier := "mvp-pkce-verifier-1234567890"
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
@@ -247,7 +269,7 @@ func setupVerifiedSession(t *testing.T) (http.Handler, string, *http.Cookie) {
 func authorizeCodeForVerifiedUser(t *testing.T, nonce string) (http.Handler, string, string) {
 	t.Helper()
 	router, _, cookie := setupVerifiedSession(t)
-	verifier := "mvp-pkce-verifier-1234567890"
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
 	challenge := pkceChallengeS256(t, verifier)
 	path := "/authorize?response_type=code&client_id=" + testOAuthClientID +
 		"&redirect_uri=" + url.QueryEscape(testOAuthRedirectURI) +

@@ -7,9 +7,10 @@ import (
 )
 
 type Config struct {
-	Addr         string
-	DatabaseURL  string
-	CookieSecure bool
+	Addr          string
+	DatabaseURL   string
+	CookieSecure  bool
+	SessionSecret string
 }
 
 func Load() Config {
@@ -30,11 +31,16 @@ func Load() Config {
 			cookieSecure = parsed
 		}
 	}
+	sessionSecret := os.Getenv("AUTH_SERVICE_SESSION_SECRET")
+	if sessionSecret == "" && !cookieSecure {
+		sessionSecret = "local-dev-session-secret-change-me"
+	}
 
 	return Config{
-		Addr:         addr,
-		DatabaseURL:  databaseURL,
-		CookieSecure: cookieSecure,
+		Addr:          addr,
+		DatabaseURL:   databaseURL,
+		CookieSecure:  cookieSecure,
+		SessionSecret: sessionSecret,
 	}
 }
 

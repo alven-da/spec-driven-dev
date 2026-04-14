@@ -138,6 +138,9 @@ func (u *OAuthUsecases) ExchangeCode(ctx context.Context, input ExchangeAuthoriz
 	if strings.TrimSpace(input.Code) == "" || strings.TrimSpace(input.ClientID) == "" || strings.TrimSpace(input.RedirectURI) == "" || strings.TrimSpace(input.CodeVerifier) == "" {
 		return TokenSet{}, ErrInvalidOAuthRequest
 	}
+	if !validPKCEVerifier(input.CodeVerifier) {
+		return TokenSet{}, ErrInvalidOAuthRequest
+	}
 	if input.ClientID != u.clientConf.ClientID {
 		return TokenSet{}, ErrUnauthorized
 	}
@@ -242,4 +245,23 @@ func randomToken(size int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+func validPKCEVerifier(verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	for _, ch := range verifier {
+		isAlphaNum := (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+		if isAlphaNum {
+			continue
+		}
+		switch ch {
+		case '-', '.', '_', '~':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }

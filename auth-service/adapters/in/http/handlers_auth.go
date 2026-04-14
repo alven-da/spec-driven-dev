@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"auth-service/core"
 )
@@ -12,12 +11,14 @@ import (
 type AuthHandlers struct {
 	usecases     *core.AuthUsecases
 	cookieSecure bool
+	cookieCodec  *SessionCookieCodec
 }
 
-func NewAuthHandlers(usecases *core.AuthUsecases, cookieSecure bool) *AuthHandlers {
+func NewAuthHandlers(usecases *core.AuthUsecases, cookieSecure bool, cookieCodec *SessionCookieCodec) *AuthHandlers {
 	return &AuthHandlers{
 		usecases:     usecases,
 		cookieSecure: cookieSecure,
+		cookieCodec:  cookieCodec,
 	}
 }
 
@@ -110,7 +111,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_session",
-		Value:    strconv.FormatInt(session.UserID, 10),
+		Value:    h.cookieCodec.EncodeUserID(session.UserID),
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   h.cookieSecure,
