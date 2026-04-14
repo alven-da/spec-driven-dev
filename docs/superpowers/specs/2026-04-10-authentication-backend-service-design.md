@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build a Go-based OAuth2/OIDC identity provider for first-party web and mobile clients. The MVP provides a hosted login UI, email/password authentication with mandatory email verification, Google social login, JWT-based OIDC tokens, rotating refresh tokens, and PostgreSQL-backed persistence.
+Build a Go-based OAuth2/OIDC identity provider for first-party web and mobile clients as a modular monolith. The MVP provides a hosted login UI, email/password authentication with mandatory email verification, Google social login, JWT-based OIDC tokens, rotating refresh tokens, and PostgreSQL-backed persistence.
 
 ## Goals
 
@@ -12,6 +12,7 @@ Build a Go-based OAuth2/OIDC identity provider for first-party web and mobile cl
 - Support email/password signup and login with mandatory email verification.
 - Support Google social login in the MVP.
 - Keep the MVP intentionally narrow by targeting a single OAuth client configured through environment or config files.
+- Keep authentication implementation and deployment monolithic: one auth service process and one auth database, even when the repository later contains additional services.
 
 ## Non-Goals
 
@@ -31,6 +32,42 @@ Use a thin-domain hybrid design:
 - Keep security-critical state transitions visible in application code and covered by focused tests.
 
 This approach balances control and learning value with lower risk than a fully hand-rolled cryptographic or protocol implementation.
+
+## Repository and Deployment Approach
+
+Use a monolithic approach:
+
+- The repository may host multiple services over time.
+- The authentication service lives in its own top-level folder and is developed as a modular monolith.
+- Additional services should follow the same modular monolith architecture style for consistency.
+- The auth runtime is one deployable Go service process.
+- The auth runtime owns one PostgreSQL database schema or database.
+- Modular internal packages keep boundaries clear (HTTP, domain, persistence, crypto, integrations), but auth is not split into microservices.
+
+Suggested top-level layout:
+
+- `auth-service/`
+  - `cmd/auth-service/` for composition root and process bootstrap.
+  - `core/` for use-case logic and core business rules.
+  - `ports/` for inbound and outbound interfaces.
+  - `adapters/`
+    - `in/http/` for HTTP handlers, routing, middleware, validation, and auth UI delivery.
+    - `out/postgres/` for persistence adapters.
+    - `out/google/` for Google identity adapter.
+    - `out/mailer/` for email adapter (log-only in dev, pluggable in prod).
+    - `out/jwt/` for token signing and verification.
+  - `config/` for typed configuration and bootstrap validation.
+  - `platform/` for cross-cutting concerns (logging, rate limiting, clock, id generation).
+  - `migrations/` for database schema evolution.
+  - `test/` for end-to-end and integration suites.
+
+Architectural rules for both services:
+
+- Dependencies flow inward: adapters -> ports -> core.
+- Core layer has no dependency on framework, transport, or database code.
+- Core coordinates use cases and business rules through ports.
+- Outbound side effects occur only through outbound ports implemented by adapters.
+- Shared code should be minimal and explicit to avoid accidental coupling between services.
 
 ## MVP Scope
 
@@ -63,7 +100,7 @@ This approach balances control and learning value with lower risk than a fully h
 
 ## High-Level Architecture
 
-The service is a single deployable Go application with modular internals:
+The system is a modular monolith delivered as a single deployable Go application:
 
 1. HTTP layer for OIDC endpoints and hosted auth pages.
 2. Domain services for users, sessions, OAuth2/OIDC flow state, token issuance, and external identity linking.
