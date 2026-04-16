@@ -57,7 +57,7 @@ func (h *OAuthHandlers) Authorize(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.sessionUserID(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		redirectToHostedLogin(w, r)
 		return
 	}
 
@@ -177,4 +177,28 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func redirectToHostedLogin(w http.ResponseWriter, r *http.Request) {
+	params := url.Values{}
+	for _, key := range []string{
+		"client_id",
+		"redirect_uri",
+		"scope",
+		"state",
+		"nonce",
+		"code_challenge",
+		"code_challenge_method",
+	} {
+		value := r.URL.Query().Get(key)
+		if value != "" {
+			params.Set(key, value)
+		}
+	}
+
+	target := "/login"
+	if encoded := params.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }

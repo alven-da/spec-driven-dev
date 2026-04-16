@@ -191,8 +191,66 @@ func TestAuthorizeRejectsTamperedSessionCookie(t *testing.T) {
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusUnauthorized {
-		t.Fatalf("expected tampered cookie authorize status %d, got %d", http.StatusUnauthorized, resp.Code)
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected tampered cookie authorize status %d, got %d", http.StatusFound, resp.Code)
+	}
+	loginURL := resp.Result().Header.Get("Location")
+	if !strings.HasPrefix(loginURL, "/login?") {
+		t.Fatalf("expected redirect to hosted login, got %q", loginURL)
+	}
+	loginQuery, err := url.Parse(loginURL)
+	if err != nil {
+		t.Fatalf("parse login redirect location: %v", err)
+	}
+	for key, want := range map[string]string{
+		"client_id":             testOAuthClientID,
+		"redirect_uri":          testOAuthRedirectURI,
+		"scope":                 "openid",
+		"code_challenge_method": "S256",
+		"code_challenge":        challenge,
+	} {
+		if got := loginQuery.Query().Get(key); got != want {
+			t.Fatalf("expected login redirect query %s=%q, got %q", key, want, got)
+		}
+	}
+}
+
+func TestAuthorizeWithoutSessionRedirectsToHostedLogin(t *testing.T) {
+	router, _, _ := setupVerifiedSession(t)
+	verifier := "mvp-pkce-verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+	challenge := pkceChallengeS256(t, verifier)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/authorize?response_type=code&client_id="+testOAuthClientID+"&redirect_uri="+url.QueryEscape(testOAuthRedirectURI)+"&scope=openid+profile&state=abc123&nonce=nonce-123&code_challenge_method=S256&code_challenge="+url.QueryEscape(challenge),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusFound {
+		t.Fatalf("expected missing session authorize status %d, got %d", http.StatusFound, resp.Code)
+	}
+	loginURL := resp.Result().Header.Get("Location")
+	if !strings.HasPrefix(loginURL, "/login?") {
+		t.Fatalf("expected redirect to hosted login, got %q", loginURL)
+	}
+	loginQuery, err := url.Parse(loginURL)
+	if err != nil {
+		t.Fatalf("parse login redirect location: %v", err)
+	}
+	for key, want := range map[string]string{
+		"client_id":             testOAuthClientID,
+		"redirect_uri":          testOAuthRedirectURI,
+		"scope":                 "openid profile",
+		"state":                 "abc123",
+		"nonce":                 "nonce-123",
+		"code_challenge_method": "S256",
+		"code_challenge":        challenge,
+	} {
+		if got := loginQuery.Query().Get(key); got != want {
+			t.Fatalf("expected login redirect query %s=%q, got %q", key, want, got)
+		}
 	}
 }
 
